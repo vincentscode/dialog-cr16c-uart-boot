@@ -300,6 +300,7 @@ class Response():
 			ErrorResponse: ErrorResponse.RESPONSE_CODES,
 			SyncResponse: SyncResponse.RESPONSE_CODES,
 			DebugResponse: DebugResponse.RESPONSE_CODES,
+			OnlineResponse: OnlineResponse.RESPONSE_CODES,
 			ChecksumResponse: ChecksumResponse.RESPONSE_CODES,
 			FlashInfoResponse: FlashInfoResponse.RESPONSE_CODES,
 			ChipIdResponse: ChipIdResponse.RESPONSE_CODES
@@ -359,6 +360,12 @@ class DebugResponse(Response):
 	def handle(self):
 		print(''.join(chr(b) for b in self.payload), end='')
 		return True
+
+class OnlineResponse(Response):
+	RESPONSE_CODES = [ 0x07 ]
+
+	def __init__(self, header, payload):
+		super().__init__(header, payload)
 
 class ChecksumResponse(Response):
 	RESPONSE_CODES = [ 0x09 ]
@@ -473,11 +480,10 @@ class LoaderSession():
 			if resp.handle():
 				continue
 
-			self.response_available.acquire()
-			print(resp)
-			self.queued_responses.append(resp)
-			self.response_available.notify_all()
-			self.response_available.release()
+			with self.response_available:
+				print(resp)
+				self.queued_responses.append(resp)
+				self.response_available.notify_all()
 
 	def receive_packet(self):
 		sync = self.read(1)
@@ -501,24 +507,44 @@ class LoaderSession():
 				return resp
 		return None
 
+	def find_online_response(self):
+		for resp in self.queued_responses:
+			if isinstance(resp, OnlineResponse):
+				return resp
+		return None
+
 	def await_response(self, dispatch, timeout=False):
 		if isinstance(timeout, bool) and timeout == False:
 			timeout = dispatch.cmd.get_timeout(self.serial.baudrate)
 
-		self.response_available.acquire()
-		resp = self.find_response(dispatch.id)
-		if resp:
-			self.queued_responses.remove(resp)
-			self.response_available.release()
-			return resp
-
-		while self.response_available.wait(timeout):
+		with self.response_available:
 			resp = self.find_response(dispatch.id)
 			if resp:
 				self.queued_responses.remove(resp)
 				return resp
 
-		return None
+			while self.response_available.wait(timeout):
+				resp = self.find_response(dispatch.id)
+				if resp:
+					self.queued_responses.remove(resp)
+					return resp
+
+			return None
+
+	def await_online_response(self, timeout=2):
+		with self.response_available:
+			resp = self.find_online_response()
+			if resp:
+				self.queued_responses.remove(resp)
+				return resp
+
+			while self.response_available.wait(timeout):
+				resp = self.find_online_response()
+				if resp:
+					self.queued_responses.remove(resp)
+					return resp
+
+			return None
 
 	def start(self):
 		self.exit = False
@@ -536,6 +562,11 @@ class LoaderSession():
 		return resp and isinstance(resp, SyncResponse)
 
 	def sync(self, tries=3):
+		online = self.await_online_response(timeout=2)
+		if online:
+			print("Loader announced online")
+			return True
+
 		for try_ in range(tries):
 			if self.ping():
 				print(f"Synchronized in {try_ + 1} attempts")
