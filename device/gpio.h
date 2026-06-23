@@ -38,11 +38,9 @@
 #define P5_DIR_REG MMIO16(0xFF4886)
 #define P5_MODE_REG MMIO16(0xFF4888)
 
-#define PORT_BASE(i)		(0xFF4830L + ((unsigned long)i) * 0x10L)
-#define PORT_DATA_REG(port)	MMIO16(PORT_BASE(port) + 0x00)
-#define PORT_SET_REG(port)	MMIO16(PORT_BASE(port) + 0x02)
-#define PORT_RESET_REG(port)	MMIO16(PORT_BASE(port) + 0x04)
-#define PORT_DIR_REG(port)	MMIO16(PORT_BASE(port) + 0x06)
-#define PORT_MODE_REG(port)	MMIO16(PORT_BASE(port) + 0x08)
-
-
+#define PORT_BASE(i)         (0xFF4830L + ((unsigned long)i) * 0x10L)
+#define PORT_DATA_REG(port)  MMIO16(PORT_BASE(port) + 0x00)
+#define PORT_SET_REG(port)   MMIO16(PORT_BASE(port) + 0x02)
+#define PORT_RESET_REG(port) MMIO16(PORT_BASE(port) + 0x04)
+#define PORT_DIR_REG(port)   MMIO16(PORT_BASE(port) + 0x06)
+#define PORT_MODE_REG(port)  MMIO16(PORT_BASE(port) + 0x08)

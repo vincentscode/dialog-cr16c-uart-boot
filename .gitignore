@@ -1,6 +1,10 @@
-*.o
 test
+bootrom
+
+*.o
 *.bak
 *.bin
 *.elf
-bootrom
+
+.venv/
+.idea/

@@ -2,6 +2,7 @@ dialog-cr16c-uart-boot
 =============================
 
 ### Overview
+
 UART bootloader for CR16C based Dialog DECT SoCs
 
 https://user-images.githubusercontent.com/748791/209271987-683d4506-6c61-477d-b1db-ebee4b655a7c.mp4
@@ -28,29 +29,26 @@ This fork has been tested with:
 
 ### Usage
 
-```bash
-usage: dialogtool.py [-h] [-p PORT] [-b BAUDRATE] [-l LOADER] [--skip-loader]
-                     [--initial-baudrate INITIAL_BAUDRATE]
-                     {chip_id,flash_info,read_flash,write_flash}
-```
-
 ##### Reading Chip ID (safe, good connection test)
+
 ```bash
 ./host/dialogtool.py -p /dev/ttyUSB0 chip_id
 ```
 
 ##### Dumping flash content (safe)
+
 ```bash
 ./host/dialogtool.py -p /dev/ttyUSB0 read_flash gigaset_c430_dump.bin
 ```
 
-In some cases, the automatic flash size detection can fail.  
-The flash size can be provided manually to force reading (for a 8 MiB flash chip):
+In some cases, the automatic flash size detection can fail. The flash size can be provided manually to force reading (for a 8 MiB flash chip):
+
 ```bash
 ./host/dialogtool.py -p /dev/ttyUSB0 read_flash gigaset_c430_dump.bin 0x0 0x800000 # [offset] [length], both decimal and hex (with 0x prefix) are supported
 ```
 
 ##### Writing flash content (unsafe, dangerous)
+
 The UART bootloader cannot be bricked, but you might render your phone unbootable if you do not have a valid firmware dump (or upload a broken firmware).  
 **Proceed with caution and validate you have (ideally multiple copies) of a valid firmware dump.**
 
@@ -59,6 +57,7 @@ The UART bootloader cannot be bricked, but you might render your phone unbootabl
 ```
 
 Partial writing is also supported. This can be useful for development, as a full flash write can take a long time.
+
 ```bash
 ./host/dialogtool.py -p /dev/ttyUSB0 write_flash gigaset_c430_dump.bin 0x100000 0x1000 # [offset] [length], both decimal and hex (with 0x prefix) are supported
 ```

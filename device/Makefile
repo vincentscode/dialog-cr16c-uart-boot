@@ -1,4 +1,4 @@
-SRCS         := crt0.s vectors.s uart.c test.c crc32.c qspi.c system.c dma.c startup.c chipid.c
+SRCS         := crt0.s vectors.s uart.c loader.c crc32.c qspi.c system.c dma.c startup.c chipid.c
 
 TOOLCHAIN    ?= $(HOME)/opt/cross
 GCC_VERSION  ?= 10.5.0
@@ -35,12 +35,15 @@ LDFLAGS := \
     -Wl,--print-memory-usage \
     -Wl,-L$(GCC_LIB)
 
-.PHONY: all
+.PHONY: all clean
 
-all: test.bin
+all: loader.bin
 
-test.bin: test
+loader.bin: loader
 	$(OBJCOPY) -O binary $< $@
 
-test: $(SRCS)
+loader: $(SRCS)
 	$(CC) $(CFLAGS) $(WARNFLAGS) $(LDFLAGS) $^ -o $@
+
+clean:
+	rm -f loader loader.bin

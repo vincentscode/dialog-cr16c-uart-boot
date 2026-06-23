@@ -146,11 +146,11 @@ class Command():
         sync = LoaderSession.SYNC_BYTE.to_bytes(1, byteorder="little")
         header = struct.pack("<BLL", self.cmd, id, len(payload))
         data = sync + header + crc32(header).to_bytes(4, byteorder="little")
-#		print(f'CRC32 python {(header + crc32(header).to_bytes(4, byteorder="little")).hex()}')
+#        print(f'CRC32 python {(header + crc32(header).to_bytes(4, byteorder="little")).hex()}')
         if len(payload) > 0:
             data += payload
             data += crc32(payload).to_bytes(4, byteorder="little")
-#		print(f'Command data python {data.hex()}')
+#        print(f'Command data python {data.hex()}')
         return data
 
     def get_timeout(self, baudrate):
@@ -682,9 +682,8 @@ class CliCommand():
         if not self.parse_args(parser):
             sys.exit(1)
 
-        if not args.skip_loader:
-            with Bootrom(args.port, args.initial_baudrate) as bootrom:
-                bootrom.uart_boot_file(args.loader)
+        with Bootrom(args.port, args.initial_baudrate) as bootrom:
+            bootrom.uart_boot_file(args.loader)
 
         with LoaderSession(args.port, args.initial_baudrate) as session:
             if not session.sync():
@@ -838,8 +837,7 @@ script_dir = os.path.dirname(os.path.realpath(__file__))
 parser = ArgumentParser(prog="dialogtool.py", description="Dialog UART bootloader tool")
 parser.add_argument("-p", "--port", default="/dev/ttyUSB0")
 parser.add_argument("-b", "--baudrate", type=int, default=230400)
-parser.add_argument("-l", "--loader", default=f"{script_dir}/../device/test.bin")
-parser.add_argument("--skip-loader", action="store_true", help="Skip loader upload")
+parser.add_argument("-l", "--loader", default=f"{script_dir}/../device/loader.bin")
 parser.add_argument("--initial-baudrate", type=int, default=Bootrom.BAUDRATE, help="Set baudrate used for intial communication")
 parser.add_argument("command", choices=CLI_COMMANDS.keys())
 (args, excess_args) = parser.parse_known_args()

@@ -2,8 +2,8 @@ EXTERN(_vector_table)
 ENTRY(bootloader_entry)
 MEMORY
 {
- RES (r)	: ORIGIN = 0x00010000, LENGTH = 0x80
- ram (rwx)	: ORIGIN = 0x00010080, LENGTH = 0x3F80 /* 16K - 128 byte */
+ RES (r)    : ORIGIN = 0x00010000, LENGTH = 0x80
+ ram (rwx)  : ORIGIN = 0x00010080, LENGTH = 0x3F80 /* 16K - 128 byte */
 }
 SECTIONS
 {

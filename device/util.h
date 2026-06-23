@@ -8,4 +8,4 @@
 
 #define ARRAY_SIZE(x_) (sizeof(x_) / sizeof(*(x_)))
 
-typedef void (*funcp_t) (void);
+typedef void (*funcp_t)(void);
