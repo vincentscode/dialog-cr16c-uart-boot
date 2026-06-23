@@ -9,6 +9,8 @@ GCC_VERSION=10.5.0
 BINUTILS_VERSION=2.37
 NEWLIB_VERSION=4.3.0.20230120
 
+pushd /tmp
+
 curl -O -L "https://ftp.gnu.org/gnu/gcc/gcc-$GCC_VERSION/gcc-$GCC_VERSION.tar.gz"
 curl -O -L "https://ftp.gnu.org/gnu/binutils/binutils-$BINUTILS_VERSION.tar.gz"
 curl -O -L "https://sourceware.org/pub/newlib/newlib-$NEWLIB_VERSION.tar.gz"
@@ -39,4 +41,5 @@ make -j
 make install
 popd
 
+popd
 echo done. run 'export PATH="$PATH:$PREFIX/bin"' now

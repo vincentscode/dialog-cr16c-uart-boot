@@ -15,10 +15,16 @@ dialog-cr16c-uart-boot is designed to work with https://github.com/Manawyrm/Giga
 Interfacing with the test pads on the phone PCB manually while supplying the phone with power is tricky. The DECT TX pin needs to be pulled down to ground to force the phone into the UART loader.
 
 ### Tested SoCs/phones
-Osmocom Wiki contains a list of tested & supported phones/SoCs:  
+
+The Osmocom Wiki contains a list of tested & supported phones / SoCs of the upstream software:  
 https://osmocom.org/projects/misc-dect-hacks/wiki/Dialog-cr16c-uart-boot
 
-These include Gigaset C430 (Dialog SC14441, SC14448), CL660HX (Dialog SC14444), etc. phones.
+This fork has been tested with:
+| Device                        | SoC     |
+| ----------------------------- | ------- |
+| Gigaset C430 / C430H / C430HX | SC14441 |
+| Gigaset AS320                 | SC14481 |
+| Gigaset S850                  | SC14443 |
 
 ### Usage
 
@@ -56,10 +62,3 @@ Partial writing is also supported. This can be useful for development, as a full
 ```bash
 ./host/dialogtool.py -p /dev/ttyUSB0 write_flash gigaset_c430_dump.bin 0x100000 0x1000 # [offset] [length], both decimal and hex (with 0x prefix) are supported
 ```
-
-### Loader stub
-
-Device side loader code lives in [device](/device) directory.  
-This repo includes a prebuilt loader binary. Toolchain is not required unless you want to modify the loader binary.
-Loader build infrastructure assumes cr16-c-elf toolchain is installed in `$HOME/opt/cross/` and cr16-c-elf-* binaries are in `$PATH`  
-Needs libc in prefix `$HOME/opt/cross/cr16-c-elf/`  
