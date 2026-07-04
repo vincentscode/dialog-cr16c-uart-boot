@@ -23,8 +23,8 @@ https://osmocom.org/projects/misc-dect-hacks/wiki/Dialog-cr16c-uart-boot
 This fork has been tested with:
 | Device                        | SoC     |
 | ----------------------------- | ------- |
-| Gigaset C430                  | SC14441 |
-| Gigaset C430                  | SC14481 |
+| Gigaset C430                  | SC14441 |
+| Gigaset C430                  | SC14481 |
 | Gigaset AS320                 | SC14481 |
 | Gigaset S850                  | SC14443 |
 
