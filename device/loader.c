@@ -22,16 +22,17 @@
 
 #define HEADER_BYTE        0xA5
 
-#define UART_CMD_PING        0x00
-#define UART_CMD_SET_BAUDRATE    0x01
-#define UART_CMD_FLASH_INFO    0x02
-#define UART_CMD_ERASE_SECTOR    0x03
-#define UART_CMD_PROGRAM_PAGE    0x04
+#define UART_CMD_PING         0x00
+#define UART_CMD_SET_BAUDRATE 0x01
+#define UART_CMD_FLASH_INFO   0x02
+#define UART_CMD_ERASE_SECTOR 0x03
+#define UART_CMD_PROGRAM_PAGE 0x04
 #define UART_CMD_RESET        0x05
-#define UART_CMD_READ_FLASH    0x06
-#define UART_CMD_CHECKSUM    0x07
-#define UART_CMD_CHIPID        0x08
+#define UART_CMD_READ_FLASH   0x06
+#define UART_CMD_CHECKSUM     0x07
+#define UART_CMD_CHIPID       0x08
 #define UART_CMD_READMEM      0x09
+#define UART_CMD_TESTING      0x10
 
 #define RESPONSE_INVALID_CRC    0x00
 #define RESPONSE_CMD_OK        0x01
@@ -78,6 +79,11 @@ typedef struct jedec_nor_flash_info {
 } jedec_nor_flash_info_t;
 
 static jedec_nor_flash_info_t flash_info_g = {0};
+
+typedef struct chip_info {
+    bool known;
+    bool has_qspi;
+} chip_info_t;
 
 static uint32_t read_le32(const void *data) {
     const uint8_t *data8 = data;
@@ -233,6 +239,7 @@ static void trc_trap(void) {
 
 static void und_trap(void) {
     print_trap_reset("Undefined instruction");
+    while (1) {}
 }
 
 static void iad_trap(void) {
@@ -760,6 +767,14 @@ static void call_readn_handler(const cmd_handler_t *handler, const uint32_t id, 
     send_response_with_payload(RESPONSE_OK, id, (void *) addr, len);
 }
 
+void call_testing_handler(const cmd_handler_t * handler, uint32_t id, const void * param_data,
+                          unsigned int param_len) {
+    debug_puts("********\r\n");
+    debug_puts("Hello World!\r\n");
+    debug_puts("********\r\n");
+    send_response(RESPONSE_OK, id);
+}
+
 static const cmd_handler_t cmd_handlers[] = {
     [UART_CMD_PING] = {
         .call = call_ping_handler,
@@ -800,6 +815,10 @@ static const cmd_handler_t cmd_handlers[] = {
     [UART_CMD_READMEM] = {
         .call = call_readn_handler,
         .min_param_len = 8,
+    },
+    [UART_CMD_TESTING] = {
+        .call = call_testing_handler,
+        .min_param_len = 0,
     }
 };
 
@@ -807,6 +826,35 @@ static void dispatch_cmd(const cmd_handler_t *handler, const uint32_t id, const 
                          const uint32_t parameter_len) {
     handler->call(handler, id, parameter_data, parameter_len);
 }
+
+static const chip_info_t chip_infos[] = {
+    // SC14441
+    [441] = {
+        .known = true,
+        .has_qspi = true,
+    },
+    // SC14444
+    [444] = {
+        .known = true,
+        .has_qspi = true,
+    },
+    // SC14448
+    [448] = {
+        .known = true,
+        .has_qspi = true,
+    },
+
+    // SC14440
+    [440] = {
+        .known = true,
+        .has_qspi = false,
+    },
+    // SC14481
+    [481] = {
+        .known = true,
+        .has_qspi = false,
+    },
+};
 
 int main(void) {
     uart_init();
@@ -827,9 +875,19 @@ int main(void) {
 
     chipid_t chip_id;
     chipid_read(&chip_id);
+    const size_t combined_chip_id = (chip_id.id1 - '0') * 100 + (chip_id.id2 - '0') * 10 + (chip_id.id3 - '0');
+
     bool has_qspi = true;
-    if (chip_id.id1 == '4' && chip_id.id2 == '8' && chip_id.id3 == '1') {
-        has_qspi = false;
+    if (combined_chip_id < sizeof(chip_infos) / sizeof(chip_infos[0]) && chip_infos[combined_chip_id].known) {
+        debug_puts("known chip: ");
+        has_qspi = chip_infos[combined_chip_id].has_qspi;
+        if (has_qspi) {
+            debug_puts("has QSPI.\r\n");
+        } else {
+            debug_puts("has no QSPI.\r\n");
+        }
+    } else {
+        debug_puts("WARNING: unknown chip: Assuming it has a QSPI flash. If the loader crashes, it may not have any.\r\n");
     }
 
     if (has_qspi) {

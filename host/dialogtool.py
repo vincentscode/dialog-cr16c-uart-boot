@@ -146,11 +146,9 @@ class Command():
         sync = LoaderSession.SYNC_BYTE.to_bytes(1, byteorder="little")
         header = struct.pack("<BLL", self.cmd, id, len(payload))
         data = sync + header + crc32(header).to_bytes(4, byteorder="little")
-#        print(f'CRC32 python {(header + crc32(header).to_bytes(4, byteorder="little")).hex()}')
         if len(payload) > 0:
             data += payload
             data += crc32(payload).to_bytes(4, byteorder="little")
-#        print(f'Command data python {data.hex()}')
         return data
 
     def get_timeout(self, baudrate):
@@ -271,6 +269,13 @@ class ReadNCommand(Command):
 
     def __repr__(self):
         return f"ReadFlash(0x{self.start_address:08x}, {self.length})"
+
+class TestingCommand(Command):
+    def __init__(self):
+        super().__init__(0x10)
+
+    def __repr__(self):
+        return f"Testing()"
 
 class ResponseHeader():
     LENGTH = 13
@@ -467,7 +472,7 @@ class LoaderSession():
     def send_command(self, cmd):
         dispatch = DispatchedCommand(cmd, self.next_id)
         self.next_id += 1
-        print(f"Dispatching command {dispatch}")
+        # print(f"Dispatching command {dispatch}")
         self.write(dispatch.encode())
         return dispatch
 
@@ -481,7 +486,7 @@ class LoaderSession():
                 continue
 
             with self.response_available:
-                print(resp)
+                print("response:", resp)
                 self.queued_responses.append(resp)
                 self.response_available.notify_all()
 
@@ -561,7 +566,7 @@ class LoaderSession():
         resp = self.await_response(dispatch)
         return resp and isinstance(resp, SyncResponse)
 
-    def sync(self, tries=3):
+    def sync(self, tries=10):
         online = self.await_online_response(timeout=2)
         if online:
             print("Loader announced online")
@@ -668,6 +673,11 @@ class LoaderSession():
 
     def chip_id(self):
         cmd = ChipIdCommand()
+        dispatch = self.send_command(cmd)
+        return self.await_response(dispatch)
+    
+    def testing(self):
+        cmd = TestingCommand()
         dispatch = self.send_command(cmd)
         return self.await_response(dispatch)
 
@@ -824,6 +834,57 @@ class CliCommandReadMem(CliCommand):
         with open(self.args.filename, 'wb') as f:
             f.write(session.read_mem(offset, length))
 
+class CliCommandTesting(CliCommand):
+    def __init__(self):
+        super().__init__()
+
+    def execute(self, session):
+        print(session.testing())
+
+class CliCommandInteractive(CliCommand):
+    def __init__(self):
+        super().__init__()
+
+    def execute(self, session):
+        print(f"Starting interactive session...")
+        
+        stop_ping = threading.Event()
+        session_lock = threading.Lock()
+        def keep_alive():
+            while not stop_ping.wait(2):
+                with session_lock:
+                    session.ping()
+        
+        ping_thread = threading.Thread(target=keep_alive, daemon=True)
+        ping_thread.start()
+        
+        try:
+            while True:
+                try:
+                    x = input("> ")
+                except EOFError:
+                    break
+
+                if not x in CLI_COMMANDS:
+                    if x.strip() == "":
+                        continue
+
+                    if x == "interactive":
+                        print("wtf, no")
+                        break
+                    
+                    if x == "q":
+                        break
+
+                    print("unknown command")
+                    continue
+                else:
+                    with session_lock:
+                        cmd = CLI_COMMANDS[x]()
+                        cmd.execute(session)
+        finally:
+            stop_ping.set()
+
 CLI_COMMANDS = {
     "chip_id": CliCommandChipId,
     "flash_info": CliCommandFlashInfo,
@@ -831,6 +892,8 @@ CLI_COMMANDS = {
     "write_flash": CliCommandWriteFlash,
     "reset": CliCommandReset,
     "read_mem": CliCommandReadMem,
+    "testing": CliCommandTesting,
+    "interactive": CliCommandInteractive,
 }
 
 script_dir = os.path.dirname(os.path.realpath(__file__))
