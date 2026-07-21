@@ -21,3 +21,9 @@ void display_fill(uint16_t color565);
 void display_draw_test_pattern(void);
 
 void display_backlight_on(void);
+
+void display_ramwr_begin(void);
+
+void display_write_pixels(const uint16_t *pixels, uint32_t count);
+
+void display_ramwr_end(void);

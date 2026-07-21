@@ -1,16 +1,21 @@
 #include "display.h"
 
+#include <stdbool.h>
 #include <stdint.h>
 
+#include "dma.h"
 #include "gpio.h"
 #include "util.h"
 #include "watchdog.h"
 
-#define SPI_CTRL_REG        MMIO16(0xFF4940)
-#define SPI_CTRL_REG_TXH    (1 << 11)
-#define SPI_RX_TX_REG0      MMIO16(0xFF4942)
-#define SPI_CTRL_REG1       MMIO16(0xFF4948)
-#define SPI_CTRL_REG1_BUSY  (1 << 3)
+#define SPI_CTRL_REG           MMIO16(0xFF4940)
+#define SPI_CTRL_REG_TXH       (1 << 11)
+#define SPI_CTRL_REG_WORD_MASK (3 << 7)
+#define SPI_CTRL_REG_WORD_16   (1 << 7)
+#define SPI_RX_TX_REG0         MMIO16(0xFF4942)
+#define SPI_CLEAR_INT_REG      MMIO16(0xFF4946)
+#define SPI_CTRL_REG1          MMIO16(0xFF4948)
+#define SPI_CTRL_REG1_BUSY     (1 << 3)
 
 #define CLK_AMBA_REG        MMIO16(0xFF4000)
 #define CLK_CODEC_DIV_REG   MMIO16(0xFF4002)
@@ -103,6 +108,75 @@ static void spi0_tx_byte(uint8_t b) {
             return;
         }
     }
+}
+
+#define SPI0_DMA_TIMEOUT 0x800000UL
+
+static void spi0_wait_tx_holding_empty(void) {
+    uint32_t timeout = SPI0_WAIT_TIMEOUT;
+    while (SPI_CTRL_REG & SPI_CTRL_REG_TXH) {
+        watchdog_reset();
+        if (--timeout == 0) {
+            return;
+        }
+    }
+}
+
+static void spi0_wait_idle(void) {
+    uint32_t timeout = SPI0_WAIT_TIMEOUT;
+    while (SPI_CTRL_REG1 & SPI_CTRL_REG1_BUSY) {
+        watchdog_reset();
+        if (--timeout == 0) {
+            return;
+        }
+    }
+}
+
+static void spi0_set_word16(bool enable16) {
+    SPI_CTRL_REG &= ~0x0001;
+    SPI_CTRL_REG = (uint16_t) ((SPI_CTRL_REG & ~SPI_CTRL_REG_WORD_MASK) | (enable16 ? SPI_CTRL_REG_WORD_16 : 0));
+    SPI_CTRL_REG |= 0x0001;
+}
+
+static void spi0_blit16_dma(const uint16_t *src, uint32_t count, bool src_increment) {
+    if (count == 0) {
+        return;
+    }
+
+    spi0_wait_tx_holding_empty();
+    SPI_CLEAR_INT_REG = 1;
+    SPI_RX_TX_REG0 = src[0];
+
+    if (count == 1) {
+        spi0_wait_idle();
+        return;
+    }
+
+    const uint32_t dma_count = count - 1;
+    const uint16_t *dma_src = src_increment ? &src[1] : &src[0];
+
+    DMAX_A_STARTL_REG(DMA_SPI_TX) = (uint16_t) (uintptr_t) dma_src;
+    DMAX_A_STARTH_REG(DMA_SPI_TX) = (uint16_t) ((uint32_t) (uintptr_t) dma_src >> 16);
+    DMAX_B_STARTL_REG(DMA_SPI_TX) = (uint16_t) (uintptr_t) &SPI_RX_TX_REG0;
+    DMAX_B_STARTH_REG(DMA_SPI_TX) = (uint16_t) ((uint32_t) (uintptr_t) &SPI_RX_TX_REG0 >> 16);
+    DMAX_INT_REG(DMA_SPI_TX) = (uint16_t) dma_count;
+    DMAX_LEN_REG(DMA_SPI_TX) = (uint16_t) dma_count;
+    DMAX_CTRL_REG(DMA_SPI_TX) = DMAX_CTRL_REG_DMA_PRIO_LOWMID | (src_increment ? DMAX_CTRL_REG_AINC : 0) | DMAX_CTRL_REG_DREQ_MODE | DMAX_CTRL_REG_BW_HALFWORD;
+    DMAX_CTRL_REG(DMA_SPI_TX) |= DMAX_CTRL_REG_DMA_ON;
+
+    uint32_t timeout = SPI0_DMA_TIMEOUT;
+    while (timeout--) {
+        watchdog_reset();
+        if (!(DMAX_CTRL_REG(DMA_SPI_TX) & DMAX_CTRL_REG_DMA_ON)) {
+            break;
+        }
+        if (DMAX_IDX_REG(DMA_SPI_TX) >= dma_count) {
+            break;
+        }
+    }
+
+    DMAX_CTRL_REG(DMA_SPI_TX) &= ~DMAX_CTRL_REG_DMA_ON;
+    spi0_wait_idle();
 }
 
 #define LCD_CS_BIT   4
@@ -212,23 +286,30 @@ void display_init(void) {
     lcd_run_init_table(st7735_init_table);
 }
 
-void display_fill(uint16_t color565) {
-    const uint8_t px_hi = (uint8_t) (color565 >> 8);
-    const uint8_t px_lo = (uint8_t) color565;
-
+void display_ramwr_begin(void) {
     LCD_DC_CMD();
     LCD_CS_LOW();
     spi0_tx_byte(ST7735_CMD_RAMWR);
-
     LCD_DC_DATA();
-    for (uint32_t i = 0; i < (uint32_t) ST7735_WIDTH * ST7735_HEIGHT; i++) {
-        spi0_tx_byte(px_hi);
-        spi0_tx_byte(px_lo);
-        if ((i & 0x3FF) == 0) {
-            watchdog_reset();
-        }
-    }
+    spi0_set_word16(true);
+}
+
+void display_write_pixels(const uint16_t *pixels, uint32_t count) {
+    spi0_blit16_dma(pixels, count, true);
+}
+
+void display_ramwr_end(void) {
+    spi0_set_word16(false);
     LCD_CS_HIGH();
+}
+
+void display_fill(uint16_t color565) {
+    static uint16_t color;
+    color = color565;
+
+    display_ramwr_begin();
+    spi0_blit16_dma(&color, (uint32_t) ST7735_WIDTH * ST7735_HEIGHT, false);
+    display_ramwr_end();
 }
 
 void display_draw_test_pattern(void) {
@@ -242,26 +323,20 @@ void display_draw_test_pattern(void) {
         ST7735_COLOR_WHITE,
         ST7735_COLOR_BLACK
     };
+    static uint16_t line[ST7735_WIDTH];
 
-    LCD_DC_CMD();
-    LCD_CS_LOW();
-    spi0_tx_byte(ST7735_CMD_RAMWR);
-
-    LCD_DC_DATA();
+    display_ramwr_begin();
     for (unsigned int y = 0; y < ST7735_HEIGHT; y++) {
         for (unsigned int x = 0; x < ST7735_WIDTH; x++) {
-            uint16_t c;
             if (x == 0 || x == ST7735_WIDTH - 1 || y == 0 || y == ST7735_HEIGHT - 1) {
-                c = ST7735_COLOR_RED;
+                line[x] = ST7735_COLOR_RED;
             } else {
-                c = bars[x >> 4];
+                line[x] = bars[x >> 4];
             }
-            spi0_tx_byte((uint8_t) (c >> 8));
-            spi0_tx_byte((uint8_t) c);
         }
-        watchdog_reset();
+        display_write_pixels(line, ST7735_WIDTH);
     }
-    LCD_CS_HIGH();
+    display_ramwr_end();
 }
 
 void display_backlight_on(void) {
