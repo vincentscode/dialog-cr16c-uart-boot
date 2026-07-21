@@ -820,8 +820,8 @@ class CliCommandReadMem(CliCommand):
 
     def parse_args(self, parser):
         parser.add_argument("filename")
-        parser.add_argument("offset", type=int_autobase, nargs="?")
-        parser.add_argument("length", type=int_autobase, nargs="?")
+        parser.add_argument("offset", type=int_autobase)
+        parser.add_argument("length", type=int_autobase)
         self.args = parser.parse_args()
         return True
 
