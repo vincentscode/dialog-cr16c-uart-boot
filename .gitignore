@@ -1,5 +1,6 @@
 test
 bootrom
+loader
 
 *.o
 *.bak
