@@ -1,0 +1,9 @@
+#pragma once
+
+#include "util.h"
+
+#define BAT_CTRL_REG  MMIO16(0xFF4812)
+#define BAT_CTRL2_REG MMIO16(0xFF4814)
+#define CP_CTRL_REG   MMIO16(0xFF481C)
+#define PAD_CTRL_REG  MMIO16(0xFF481E)
+#define LED_CTRL_REG  MMIO16(0xFF4820)

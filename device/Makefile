@@ -1,4 +1,4 @@
-SRCS         := crt0.s vectors.s uart.c loader.c crc32.c qspi.c system.c dma.c startup.c chipid.c display.c
+SRCS         := crt0.s vectors.s startup.c loader.c uart.c protocol.c debug.c traps.c commands.c flash.c crc32.c qspi.c system.c dma.c chipid.c display.c spi.c clock.c
 
 TOOLCHAIN    ?= $(HOME)/opt/cross
 GCC_VERSION  ?= 10.5.0

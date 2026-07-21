@@ -1,6 +1,7 @@
 #pragma once
 
 #include <stdbool.h>
+#include <stdint.h>
 
 #include "util.h"
 
@@ -30,24 +31,24 @@ bool uart_is_baudrate_attainable(unsigned long baudrate);
 
 void uart_set_baudrate(unsigned long baudrate);
 
-void uart_putc(char c);
-
-void uart_puts(const char *str);
-
-void uart_putbyte_hex(unsigned char byt);
-
-void uart_hexdump(const void *ptr, unsigned int len);
-
-void uart_putint(unsigned int val);
-
-void uart_putlong(unsigned long val);
-
-void uart_putint_hex(unsigned int i);
-
-void uart_putlong_hex(unsigned long i);
-
-void uart_putnewline(void);
-
 void uart_write(const void *ptr, unsigned int len);
 
 void uart_flush(void);
+
+void uart_rx_dma_reset(void);
+
+bool uart_data_available(void);
+
+unsigned int uart_rx_buffered_data(void);
+
+uint8_t uart_read_byte(void);
+
+uint32_t uart_read_u32_le(void);
+
+void uart_read(void *ptr, unsigned int len);
+
+void *uart_get_read_ptr(void);
+
+void uart_advance_read_ptr(unsigned int increment);
+
+void uart_rx_int(void);
