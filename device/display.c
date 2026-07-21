@@ -177,6 +177,6 @@ void display_draw_test_pattern(void) {
 }
 
 void display_backlight_on(void) {
-    CP_CTRL_REG = 0x013F;  // CP_EN=11, CP_LEVEL1=11, CP_LEVEL2=11
-    LED_CTRL_REG = 0x0003; // WLED_CUR0=11
+    CP_CTRL_REG = CP_CTRL_REG_CP_EN(3) | CP_CTRL_REG_CP_LEVEL1(3) | CP_CTRL_REG_CP_LEVEL2(3) | CP_CTRL_REG_CP_FREQ(1);
+    LED_CTRL_REG = LED_CTRL_REG_WLED_CUR0(3);
 }
