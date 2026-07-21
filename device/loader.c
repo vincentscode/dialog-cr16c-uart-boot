@@ -4,6 +4,7 @@
 
 #include "chipid.h"
 #include "crc32.h"
+#include "display.h"
 #include "dma.h"
 #include "irq.h"
 #include "qspi.h"
@@ -47,9 +48,9 @@
 #define RESPONSE_FLASH_INFO    0x0A
 #define RESPONSE_CHIPID        0x0B
 
-#define TIMEOUT_HEADER        0x100000
-#define TIMEOUT_CMD        0x1000
-#define TIMEOUT_PARAM        0x10000
+#define TIMEOUT_HEADER        0x1000000
+#define TIMEOUT_CMD        0x10000
+#define TIMEOUT_PARAM        0x100000
 #define TIMEOUT_SECTOR_ERASE    0x4000
 #define TIMEOUT_PAGE_PROGRAM    0x400
 
@@ -205,9 +206,14 @@ static void debug_hexdump(const void *ptr, unsigned int len) {
     uart_write(crc_buf, sizeof(crc_buf));
 }
 
+// populated by the vectors in vectors.s
+volatile uint32_t trap_pc_save;
+
 static void print_trap(const char *trap) {
     debug_puts("\r\n=======TRAP=========\r\n");
     debug_puts(trap);
+    debug_puts(" at PC=0x");
+    debug_putlong_hex(trap_pc_save);
     debug_puts("\r\n======ENDTRAP=======\r\n");
 }
 
@@ -905,6 +911,11 @@ int main(void) {
         debug_putlong(flash_info_g.size_bytes);
         debug_puts(" bytes\r\n");
     }
+
+    display_init();
+    display_draw_test_pattern();
+    display_backlight_on();
+    debug_puts("Display initialized\r\n");
 
     for (int i = 0; i < 3; i++) {
         send_response(RESPONSE_ONLINE, 0xFFFFFFFF);

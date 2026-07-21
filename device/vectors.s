@@ -31,6 +31,11 @@ vector_common:
 .macro vectors start=0, end=31, offset=0
 vector\start:
     push $0x4, r0, ra
+    /* Store the interrupted PC to report it */
+    sprd isp, (r1, r0)
+    loadd 0x00(r1, r0), (r3, r2)
+    movd $_trap_pc_save, (r1, r0)
+    stord (r3, r2), 0x0(r1, r0)
 .if \start == 5
     /*
      * This was a SVC, SVC has fixed instruction length of 2.
