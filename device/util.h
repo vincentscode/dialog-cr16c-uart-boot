@@ -8,6 +8,19 @@
 
 #define ARRAY_SIZE(x_) (sizeof(x_) / sizeof(*(x_)))
 
+#define UNUSED1(x) (void)(x)
+#define UNUSED2(x,y) (void)(x),(void)(y)
+#define UNUSED3(x,y,z) (void)(x),(void)(y),(void)(z)
+#define UNUSED4(a,x,y,z) (void)(a),(void)(x),(void)(y),(void)(z)
+#define UNUSED5(a,b,x,y,z) (void)(a),(void)(b),(void)(x),(void)(y),(void)(z)
+
+#define VA_NUM_ARGS_IMPL(_1,_2,_3,_4,_5, N,...) N
+#define VA_NUM_ARGS(...) VA_NUM_ARGS_IMPL(__VA_ARGS__, 5, 4, 3, 2, 1)
+
+#define UNUSED_IMPL_(nargs) UNUSED ## nargs
+#define UNUSED_IMPL(nargs) UNUSED_IMPL_(nargs)
+#define UNUSED(...) UNUSED_IMPL( VA_NUM_ARGS(__VA_ARGS__))(__VA_ARGS__ )
+
 typedef void (*funcp_t)(void);
 
 static inline uint32_t read_le32(const void *data) {
