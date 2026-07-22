@@ -12,7 +12,7 @@
 #define QSPIC_CTRL_REG_DIO_EN           (1 << 1)
 #define QSPIC_CTRL_REG_SIO_EN           (1 << 0)
 #define QSPIC_CFG_REG                   MMIO16(0xFF0C04)
-#define QSPIC_CFG_REG_UNKNOWN           (1 << 7)
+#define QSPIC_CFG_REG_RXD_NEG           (1 << 7)
 #define QSPIC_CFG_REG_IO3_RST_DATA      (1 << 5)
 #define QSPIC_CFG_REG_IO2_WP_DATA       (1 << 4)
 #define QSPIC_CFG_REG_IO3_RST_OEN       (1 << 3)

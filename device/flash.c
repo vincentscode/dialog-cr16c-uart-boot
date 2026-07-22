@@ -14,7 +14,7 @@
 #define JEDEC_RDSR_WIP   (1 << 0)
 #define JEDEC_RDSR_WEL   (1 << 1)
 
-#define JEDEC_CMD_READ         0x03
+#define JEDEC_CMD_FAST_READ    0x0B
 #define JEDEC_CMD_PAGE_PROGRAM 0x02
 #define JEDEC_CMD_SECTOR_ERASE 0x20
 
@@ -210,13 +210,13 @@ uint32_t flash_get_size(void) {
 
 void flash_read(const uint32_t address, void *dst, const uint32_t len) {
     uint8_t read_flash_cmd[] = {
-        JEDEC_CMD_READ, (address >> 16) & 0xff, (address >> 8) & 0xff, address & 0xff
+        JEDEC_CMD_FAST_READ, (address >> 16) & 0xff, (address >> 8) & 0xff, address & 0xff
     };
     const qspi_xfer_desc_t desc = {
         .mode = QSPI_MODE_SIO,
         .tx_data = read_flash_cmd,
         .tx_len = sizeof(read_flash_cmd),
-        .dummy_cycles_after_tx = 0,
+        .dummy_cycles_after_tx = 1,
         .rx_data = dst,
         .rx_len = len
     };

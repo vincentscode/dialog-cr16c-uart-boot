@@ -22,7 +22,7 @@ void qspi_init(void) {
     /* 0x04 = WP/IO2 output enable */
     /* 0x02 = DO/IO0 and CLK idle level high */
     /* 0x01 = auto mode */
-    QSPIC_CFG_REG = QSPIC_CFG_REG_IO3_RST_DATA | QSPIC_CFG_REG_IO3_RST_OEN | QSPIC_CFG_REG_IO2_WP_OEN;
+    QSPIC_CFG_REG = QSPIC_CFG_REG_IO3_RST_DATA | QSPIC_CFG_REG_IO3_RST_OEN | QSPIC_CFG_REG_IO2_WP_OEN | QSPIC_CFG_REG_RXD_NEG;
     /* While set in the bootrom those three do not seem to be strictly required */
     QSPIC_UNKNOWN_REG1 |= 1 << 15;
     QSPIC_UNKNOWN_REG2 = 0x105;
