@@ -24,11 +24,6 @@
 #define CLK_AMBA_REG_PCLK_DIV_2    (2 << 3)
 #define CLK_AMBA_REG_SRAM1_EN      (1 << 6)
 
-#define CLK_AUX2_REG                     MMIO16(0xFF402E)
-#define CLK_AUX2_REG_SW_QSPIC_CLK_DIV    (1 << 13)
-#define CLK_AUX2_REG_SW_QSPIC_EN         (1 << 10)
-#define CLK_AUX2_REG_SW_QSPIC_SEL_SOURCE (1 << 9)
-
 #define CLK_CODEC_DIV_REG MMIO16(0xFF4002)
 #define CLK_PER_DIV_REG   MMIO16(0xFF400C)
 #define CLK_PLL_CTRL_REG  MMIO16(0xFF4010)
