@@ -6,6 +6,9 @@ loader
 *.bak
 *.bin
 *.elf
+*.lds
 
 .venv/
 .idea/
+.vscode/
+__pycache__/

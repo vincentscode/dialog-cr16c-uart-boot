@@ -28,6 +28,24 @@ This fork has been tested with:
 | Gigaset AS320                 | SC14481 |
 | Gigaset S850                  | SC14443 |
 
+### Building the loader
+
+The device-side loader lives in `device/` and is built with `make`:
+
+```bash
+cd device
+make
+```
+
+The loader is always compiled for a specific chip:
+
+```bash
+make CHIP=SC14481
+```
+
+Optional features can be enabled or disabled for compatibility, see the `Makefile` for details.
+You can use the `SC14481` as a good baseline configuration to test unsupported chips with as it has no QSPI and not that much `SHARED_RAM`.
+
 ### Usage
 
 ##### Reading Chip ID (safe, good connection test)

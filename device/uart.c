@@ -6,7 +6,10 @@
 #include "dma.h"
 #include "gpio.h"
 #include "irq.h"
+#include "system.h"
 #include "watchdog.h"
+
+#define UART_STREAM_TIMEOUT 0x1000000
 
 static uint8_t uart_rx_buf[1024];
 static unsigned int uart_rx_dma_ptr = 0;
@@ -119,6 +122,17 @@ uint8_t uart_read_byte(void) {
     const uint8_t datum = uart_rx_buf[uart_rx_read_ptr++];
     uart_rx_read_ptr %= sizeof(uart_rx_buf);
     return datum;
+}
+
+uint8_t uart_stream_byte(void) {
+    unsigned long timeout = UART_STREAM_TIMEOUT;
+    while (!uart_data_available()) {
+        watchdog_reset();
+        if (!--timeout) {
+            system_reset();
+        }
+    }
+    return uart_read_byte();
 }
 
 uint32_t uart_read_u32_le(void) {

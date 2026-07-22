@@ -43,6 +43,8 @@ unsigned int uart_rx_buffered_data(void);
 
 uint8_t uart_read_byte(void);
 
+uint8_t uart_stream_byte(void);
+
 uint32_t uart_read_u32_le(void);
 
 void uart_read(void *ptr, unsigned int len);

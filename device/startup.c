@@ -1,4 +1,5 @@
 #include "dma.h"
+#include "irq.h"
 #include "util.h"
 
 extern unsigned int _data_loadaddr;
@@ -33,7 +34,7 @@ void c_entry(void) {
 
     /* Enable interrupts */
     dma_disable_irq_rerouting();
-    asm("ei");
+    enable_interrupts();
 
     (void) main();
 

@@ -2,6 +2,7 @@
 #include <stddef.h>
 #include <stdint.h>
 
+#include "chip_config.h"
 #include "chipid.h"
 #include "commands.h"
 #include "crc32.h"
@@ -27,40 +28,6 @@ typedef enum cmd_state {
     CMD_STATE_WAIT_PARAM
 } cmd_state_t;
 
-typedef struct chip_info {
-    bool known;
-    bool has_qspi;
-} chip_info_t;
-
-static const chip_info_t chip_infos[] = {
-    // SC14441
-    [441] = {
-        .known = true,
-        .has_qspi = true,
-    },
-    // SC14444
-    [444] = {
-        .known = true,
-        .has_qspi = true,
-    },
-    // SC14448
-    [448] = {
-        .known = true,
-        .has_qspi = true,
-    },
-
-    // SC14440
-    [440] = {
-        .known = true,
-        .has_qspi = false,
-    },
-    // SC14481
-    [481] = {
-        .known = true,
-        .has_qspi = false,
-    },
-};
-
 vector_table_t vector_table = {
     .svc_trap = svc_trap,
     .dvz_trap = dvz_trap,
@@ -73,23 +40,14 @@ vector_table_t vector_table = {
     .uart_ri_int = uart_rx_int,
 };
 
-static bool detect_has_qspi(void) {
+static void chip_id_guard(void) {
     chipid_t chip_id;
     chipid_read(&chip_id);
-    const size_t combined_chip_id = (chip_id.id1 - '0') * 100 + (chip_id.id2 - '0') * 10 + (chip_id.id3 - '0');
+    const unsigned int combined_chip_id = (chip_id.id1 - '0') * 100 + (chip_id.id2 - '0') * 10 + (chip_id.id3 - '0');
 
-    if (combined_chip_id < ARRAY_SIZE(chip_infos) && chip_infos[combined_chip_id].known) {
-        debug_puts("known chip: ");
-        if (chip_infos[combined_chip_id].has_qspi) {
-            debug_puts("has QSPI.\r\n");
-            return true;
-        }
-        debug_puts("has no QSPI.\r\n");
-        return false;
+    if (combined_chip_id != CHIP_ID_DECIMAL) {
+        debug_puts("WARNING: loader built for " CHIP_NAME " but running on a different chip\r\n");
     }
-
-    debug_puts("WARNING: unknown chip: Assuming it has a QSPI flash. If the loader crashes, it may not have any.\r\n");
-    return true;
 }
 
 int main(void) {
@@ -98,25 +56,27 @@ int main(void) {
     // empty debug to avoid first actual debug out being consumed by python frontend lol
     debug_puts("");
 
-    const bool has_qspi = detect_has_qspi();
+    chip_id_guard();
 
-    if (has_qspi) {
-        qspi_init();
-    }
+#if CHIP_HAS_QSPI
+    qspi_init();
+#endif
 
     watchdog_reset();
 
     asm("excp svc");
     debug_puts("SVC call returned\r\n");
 
-    if (has_qspi) {
-        flash_detect();
-    }
+#if CHIP_HAS_QSPI
+    flash_detect();
+#endif
 
+#if ENABLE_DISPLAY
     display_init();
     display_draw_test_pattern();
     display_backlight_on();
     debug_puts("Display initialized\r\n");
+#endif
 
     for (int i = 0; i < 3; i++) {
         protocol_send_response(RESPONSE_ONLINE, 0xFFFFFFFF);
@@ -155,8 +115,15 @@ int main(void) {
                     current_handler = command_lookup(cmd);
                     if (current_handler) {
                         if (parameter_len >= command_min_param_len(current_handler)) {
-                            timeout = TIMEOUT_PARAM;
-                            cmd_state = CMD_STATE_WAIT_PARAM;
+                            if (command_is_streaming(current_handler)) {
+                                command_dispatch(current_handler, id, NULL, parameter_len);
+                                uart_rx_dma_reset();
+                                timeout = TIMEOUT_HEADER;
+                                cmd_state = CMD_STATE_WAIT_HEADER;
+                            } else {
+                                timeout = TIMEOUT_PARAM;
+                                cmd_state = CMD_STATE_WAIT_PARAM;
+                            }
                         } else {
                             timeout = TIMEOUT_HEADER;
                             cmd_state = CMD_STATE_WAIT_HEADER;

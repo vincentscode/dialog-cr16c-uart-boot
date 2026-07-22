@@ -4,9 +4,10 @@ from argparse import ArgumentParser
 import os
 import serial
 import struct
+import subprocess
 import sys
 import threading
-from time import sleep
+from time import sleep, monotonic
 from zlib import crc32
 from hexdump import hexdump
 
@@ -277,6 +278,31 @@ class TestingCommand(Command):
     def __repr__(self):
         return f"Testing()"
 
+class WriteFrameCommand(Command):
+    def __init__(self, segments):
+        super().__init__(0x11)
+        self.segments = segments
+
+    def get_payload(self):
+        payload = bytearray([len(self.segments)])
+        for (y_start, num_rows, start_color, rle) in self.segments:
+            payload += struct.pack("<BBBH", y_start, num_rows, start_color, len(rle))
+            payload += rle
+        return bytes(payload)
+
+    def encode(self, id):
+        payload = self.get_payload()
+        sync = LoaderSession.SYNC_BYTE.to_bytes(1, byteorder="little")
+        header = struct.pack("<BLL", self.cmd, id, len(payload))
+        return sync + header + crc32(header).to_bytes(4, byteorder="little") + payload
+
+    def get_timeout(self, baudrate):
+        return len(self.get_payload()) * 10 / baudrate + 0.15
+
+    def __repr__(self):
+        rows = sum(s[1] for s in self.segments)
+        return f"WriteFrame({len(self.segments)} seg, {rows} rows)"
+
 class ResponseHeader():
     LENGTH = 13
 
@@ -486,7 +512,7 @@ class LoaderSession():
                 continue
 
             with self.response_available:
-                print("response:", resp)
+                # print("response:", resp)
                 self.queued_responses.append(resp)
                 self.response_available.notify_all()
 
@@ -681,6 +707,12 @@ class LoaderSession():
         dispatch = self.send_command(cmd)
         return self.await_response(dispatch)
 
+    def write_frame(self, segments):
+        cmd = WriteFrameCommand(segments)
+        dispatch = self.send_command(cmd)
+        resp = self.await_response(dispatch)
+        return bool(resp and isinstance(resp, SyncResponse))
+
 def int_autobase(x):
     return int(x, 0)
 
@@ -841,6 +873,145 @@ class CliCommandTesting(CliCommand):
     def execute(self, session):
         print(session.testing())
 
+class CliCommandPlayVideo(CliCommand):
+    WIDTH = 128
+    HEIGHT = 160
+
+    def __init__(self):
+        super().__init__()
+
+    def parse_args(self, parser):
+        parser.add_argument("source")
+        parser.add_argument("--loop", action="store_true")
+        parser.add_argument("--fps", type=int, default=45)
+        parser.add_argument("--threshold", type=int, default=128)
+        parser.add_argument("--invert", action="store_true")
+        parser.add_argument("--keyframe", type=int, default=60)
+        self.args = parser.parse_args()
+        return True
+
+    def _encode_band(self, bits, y_start, num_rows):
+        def _leb128(value):
+            out = bytearray()
+            while True:
+                b = value & 0x7F
+                value >>= 7
+                if value:
+                    out.append(b | 0x80)
+                else:
+                    out.append(b)
+                    return bytes(out)
+
+        W = self.WIDTH
+        start = y_start * W
+        end = (y_start + num_rows) * W
+        start_color = bits[start]
+        out = bytearray()
+        cur = start_color
+        run = 0
+        for i in range(start, end):
+            if bits[i] == cur:
+                run += 1
+            else:
+                out += _leb128(run)
+                cur = bits[i]
+                run = 1
+        out += _leb128(run)
+        return (y_start, num_rows, start_color, bytes(out))
+
+    def _diff_segments(self, bits, prev, keyframe):
+        W, H = self.WIDTH, self.HEIGHT
+        if prev is None or keyframe:
+            return [self._encode_band(bits, 0, H)]
+        changed = [bits[r * W:(r + 1) * W] != prev[r * W:(r + 1) * W] for r in range(H)]
+        segments = []
+        r = 0
+        while r < H:
+            if changed[r]:
+                r0 = r
+                while r < H and changed[r]:
+                    r += 1
+                segments.append(self._encode_band(bits, r0, r - r0))
+            else:
+                r += 1
+        return segments
+
+    def _to_bits(self, raw):
+        invert, threshold = self.args.invert, self.args.threshold
+        bits = bytearray(len(raw))
+        for i, v in enumerate(raw):
+            on = 1 if v >= threshold else 0
+            bits[i] = (1 - on) if invert else on
+        return bits
+
+    def _raw_frames(self):
+        W, H = self.WIDTH, self.HEIGHT
+        vf = f"fps={self.args.fps},scale={W}:{H}:force_original_aspect_ratio=increase,crop={W}:{H}"
+        cmd = ["ffmpeg", "-i", self.args.source, "-vf", vf, "-pix_fmt", "gray", "-f", "rawvideo", "-v", "error", "-"]
+        proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL)
+        frame_size = W * H
+        try:
+            while True:
+                raw = proc.stdout.read(frame_size)
+                if len(raw) < frame_size:
+                    break
+                yield raw
+        finally:
+            proc.stdout.close()
+            proc.wait()
+
+    def execute(self, session):
+        fps = self.args.fps or 30
+        period = 1.0 / fps
+        keyframe_interval = self.args.keyframe
+        print(f"Playing {self.args.source} @ {fps} fps")
+
+        try:
+            while True:
+                t0 = monotonic()
+                prev = None
+                since_kf = 0
+                idx = 0
+                sent = dropped = 0
+                payload_bytes = rows_sum = 0
+                wait_t = 0.0
+                for raw in self._raw_frames():
+                    slot = idx * period
+                    idx += 1
+                    now = monotonic() - t0
+                    if prev is not None and now > slot + period:
+                        dropped += 1
+                        continue
+                    if now < slot:
+                        sleep(slot - now)
+
+                    bits = self._to_bits(raw)
+                    keyframe = prev is None or (keyframe_interval and since_kf >= keyframe_interval)
+                    segments = self._diff_segments(bits, prev, keyframe)
+
+                    tw = monotonic()
+                    ok = session.write_frame(segments)
+                    wait_t += monotonic() - tw
+
+                    if ok:
+                        prev = bits
+                        since_kf = 0 if keyframe else since_kf + 1
+                    else:
+                        print(f"\nframe {idx}: not acknowledged, resyncing")
+                        prev = None
+                        since_kf = 0
+                    sent += 1
+                    payload_bytes += 1 + sum(5 + len(s[3]) for s in segments)
+                    rows_sum += sum(s[1] for s in segments)
+                    if sent % 30 == 0:
+                        el = monotonic() - t0
+                        print(f"\r{idx} fr, {idx/el:.1f} fps | {sent} shown ({sent/el:.1f} fps), {dropped} dropped | {payload_bytes/sent:.0f} B/fr | {rows_sum/sent:.0f} rows/fr | blit {1000*wait_t/sent:.0f}ms  ", end="", flush=True)
+                if not self.args.loop:
+                    break
+        except KeyboardInterrupt:
+            pass
+        print()
+
 class CliCommandInteractive(CliCommand):
     def __init__(self):
         super().__init__()
@@ -893,17 +1064,19 @@ CLI_COMMANDS = {
     "reset": CliCommandReset,
     "read_mem": CliCommandReadMem,
     "testing": CliCommandTesting,
+    "play_video": CliCommandPlayVideo,
     "interactive": CliCommandInteractive,
 }
 
-script_dir = os.path.dirname(os.path.realpath(__file__))
-parser = ArgumentParser(prog="dialogtool.py", description="Dialog UART bootloader tool")
-parser.add_argument("-p", "--port", default="/dev/ttyUSB0")
-parser.add_argument("-b", "--baudrate", type=int, default=230400)
-parser.add_argument("-l", "--loader", default=f"{script_dir}/../device/loader.bin")
-parser.add_argument("--initial-baudrate", type=int, default=Bootrom.BAUDRATE, help="Set baudrate used for intial communication")
-parser.add_argument("command", choices=CLI_COMMANDS.keys())
-(args, excess_args) = parser.parse_known_args()
+if __name__ == "__main__":
+    script_dir = os.path.dirname(os.path.realpath(__file__))
+    parser = ArgumentParser(prog="dialogtool.py", description="Dialog UART bootloader tool")
+    parser.add_argument("-p", "--port", default="/dev/ttyUSB0")
+    parser.add_argument("-b", "--baudrate", type=int, default=230400)
+    parser.add_argument("-l", "--loader", default=f"{script_dir}/../device/loader.bin")
+    parser.add_argument("--initial-baudrate", type=int, default=Bootrom.BAUDRATE, help="Set baudrate used for intial communication")
+    parser.add_argument("command", choices=CLI_COMMANDS.keys())
+    (args, excess_args) = parser.parse_known_args()
 
-cmd = CLI_COMMANDS[args.command]()
-cmd.run(args, parser)
+    cmd = CLI_COMMANDS[args.command]()
+    cmd.run(args, parser)

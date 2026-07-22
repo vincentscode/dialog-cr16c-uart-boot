@@ -1,4 +1,10 @@
-SRCS         := crt0.s vectors.s startup.c loader.c uart.c protocol.c debug.c traps.c commands.c flash.c crc32.c qspi.c system.c dma.c chipid.c display.c spi.c clock.c
+SRCS         := crt0.s vectors.s startup.c loader.c uart.c protocol.c debug.c traps.c commands.c flash.c crc32.c qspi.c system.c dma.c chipid.c clock.c display.c spi.c
+
+CHIP         ?= SC14441
+CHIPDEF      := -DCHIP_$(CHIP)
+
+ENABLE_DISPLAY ?= 1
+FEATUREDEF     := -DENABLE_DISPLAY=$(ENABLE_DISPLAY)
 
 TOOLCHAIN    ?= $(HOME)/opt/cross
 GCC_VERSION  ?= 10.5.0
@@ -13,6 +19,8 @@ GCC_LIB      := $(TOOLCHAIN)/lib/gcc/cr16-c-elf/$(GCC_VERSION)
 CFLAGS := \
     -mcr16c \
     -Os -flto -ggdb \
+    $(CHIPDEF) \
+    $(FEATUREDEF) \
     -I $(TARGET_INC) \
     -I $(GCC_LIB)/include
 
@@ -23,12 +31,12 @@ WARNFLAGS := \
     -Wmissing-prototypes \
     -Wstrict-prototypes \
     -Wundef -Wshadow \
-    -Wno-unused \
+    -Wno-unused-parameter -Wno-unused-function \
     -Werror=return-type
 
 LDFLAGS := \
     -nostartfiles \
-    -T sc14441-uart.ld \
+    -T loader.lds \
     -L $(TARGET_LIB) \
     -Wl,-lgcc \
     -Wl,--gc-sections \
@@ -42,8 +50,11 @@ all: loader.bin
 loader.bin: loader
 	$(OBJCOPY) -O binary $< $@
 
-loader: $(SRCS)
-	$(CC) $(CFLAGS) $(WARNFLAGS) $(LDFLAGS) $^ -o $@
+loader: $(SRCS) loader.lds
+	$(CC) $(CFLAGS) $(WARNFLAGS) $(LDFLAGS) $(SRCS) -o $@
+
+loader.lds: uart.lds.S chip_config.h
+	$(CC) -E -P -x c $(CHIPDEF) -I . uart.lds.S -o $@
 
 clean:
-	rm -f loader loader.bin
+	rm -f loader loader.bin loader.lds

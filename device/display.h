@@ -27,3 +27,5 @@ void display_ramwr_begin(void);
 void display_write_pixels(const uint16_t *pixels, uint32_t count);
 
 void display_ramwr_end(void);
+
+void display_write_band(uint8_t y_start, uint8_t num_rows, uint8_t start_color, uint8_t (*next_byte)(void), uint32_t rle_len);

@@ -6,6 +6,9 @@
 #include "chipid.h"
 #include "crc32.h"
 #include "debug.h"
+#if ENABLE_DISPLAY
+#include "display.h"
+#endif
 #include "flash.h"
 #include "protocol.h"
 #include "system.h"
@@ -24,12 +27,14 @@
 #define UART_CMD_CHIPID       0x08
 #define UART_CMD_READMEM      0x09
 #define UART_CMD_TESTING      0x10
+#define UART_CMD_WRITE_FRAME  0x11
 
 #define FLASH_PAGE_SIZE 256
 
 struct cmd_handler {
     void (*call)(const cmd_handler_t *handler, uint32_t id, const void *param_data, unsigned int param_len);
     unsigned int min_param_len;
+    bool streaming;
 };
 
 static uint8_t flash_read_buffer[256];
@@ -162,6 +167,36 @@ static void call_testing_handler(const cmd_handler_t *handler, uint32_t id, cons
     protocol_send_response(RESPONSE_OK, id);
 }
 
+#if ENABLE_DISPLAY
+static void call_write_frame_handler(const cmd_handler_t *handler, const uint32_t id, const void *param_data, unsigned int param_len) {
+    (void) param_data;
+    uint32_t remaining = param_len;
+
+    if (remaining >= 1) {
+        const uint8_t num_segments = uart_stream_byte();
+        remaining--;
+        for (uint8_t s = 0; s < num_segments && remaining >= 5; s++) {
+            const uint8_t y_start = uart_stream_byte();
+            const uint8_t num_rows = uart_stream_byte();
+            const uint8_t start_color = uart_stream_byte();
+            uint32_t rle_len = (uint32_t) uart_stream_byte() | ((uint32_t) uart_stream_byte() << 8);
+            remaining -= 5;
+            if (rle_len > remaining) {
+                rle_len = remaining;
+            }
+            display_write_band(y_start, num_rows, start_color, uart_stream_byte, rle_len);
+            remaining -= rle_len;
+        }
+    }
+
+    while (remaining--) {
+        uart_stream_byte();
+    }
+
+    protocol_send_response(RESPONSE_OK, id);
+}
+#endif
+
 static const cmd_handler_t cmd_handlers[] = {
     [UART_CMD_PING] = {
         .call = call_ping_handler,
@@ -206,7 +241,14 @@ static const cmd_handler_t cmd_handlers[] = {
     [UART_CMD_TESTING] = {
         .call = call_testing_handler,
         .min_param_len = 0,
-    }
+    },
+#if ENABLE_DISPLAY
+    [UART_CMD_WRITE_FRAME] = {
+        .call = call_write_frame_handler,
+        .min_param_len = 1,
+        .streaming = true,
+    },
+#endif
 };
 
 const cmd_handler_t *command_lookup(const uint8_t cmd) {
@@ -220,7 +262,10 @@ unsigned int command_min_param_len(const cmd_handler_t *handler) {
     return handler->min_param_len;
 }
 
-void command_dispatch(const cmd_handler_t *handler, const uint32_t id, const void *param_data,
-                      const unsigned int param_len) {
+bool command_is_streaming(const cmd_handler_t *handler) {
+    return handler->streaming;
+}
+
+void command_dispatch(const cmd_handler_t *handler, const uint32_t id, const void *param_data, const unsigned int param_len) {
     handler->call(handler, id, param_data, param_len);
 }
