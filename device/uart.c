@@ -3,6 +3,7 @@
 #include <stddef.h>
 #include <stdint.h>
 
+#include "clock.h"
 #include "dma.h"
 #include "gpio.h"
 #include "irq.h"
@@ -11,17 +12,27 @@
 
 #define UART_STREAM_TIMEOUT 0x1000000
 
-static uint8_t uart_rx_buf[1024];
-static unsigned int uart_rx_dma_ptr = 0;
-static unsigned int uart_rx_read_ptr = 0;
+static uint8_t uart_rx_buf[2048];
+static uint32_t rx_wrap_base = 0;
+static uint16_t rx_last_idx = 0;
+static uint32_t rx_read_total = 0;
+
+static uint32_t rx_head(void) {
+    const uint16_t idx = (uint16_t) DMAX_IDX_REG(DMA_UART_RX);
+    if (idx < rx_last_idx) {
+        rx_wrap_base += sizeof(uart_rx_buf);
+    }
+    rx_last_idx = idx;
+    return rx_wrap_base + idx;
+}
 
 static void start_uart_rx_dma(void *ptr, const unsigned int len) {
     DMAX_A_STARTL_REG(DMA_UART_RX) = (uint16_t)(uintptr_t) & UART_RX_TX_REG;
     DMAX_A_STARTH_REG(DMA_UART_RX) = (uint16_t)((uint32_t) & UART_RX_TX_REG >> 16);
     DMAX_B_STARTL_REG(DMA_UART_RX) = (uint16_t)(uintptr_t) ptr;
     DMAX_B_STARTH_REG(DMA_UART_RX) = (uint16_t)((uint32_t) ptr >> 16);
-    DMAX_INT_REG(DMA_UART_RX) = len;
-    DMAX_LEN_REG(DMA_UART_RX) = len;
+    DMAX_INT_REG(DMA_UART_RX) = len - 1;
+    DMAX_LEN_REG(DMA_UART_RX) = len - 1;
     DMAX_CTRL_REG(DMA_UART_RX) =
             DMAX_CTRL_REG_DMA_PRIO_MIDHIGH |
             DMAX_CTRL_REG_CIRCULAR |
@@ -34,7 +45,9 @@ static void start_uart_rx_dma(void *ptr, const unsigned int len) {
 
 void uart_rx_dma_reset(void) {
     start_uart_rx_dma(uart_rx_buf, sizeof(uart_rx_buf));
-    uart_rx_read_ptr = 0;
+    rx_wrap_base = 0;
+    rx_last_idx = 0;
+    rx_read_total = 0;
 }
 
 void uart_init(void) {
@@ -47,17 +60,24 @@ void uart_init(void) {
     uart_rx_dma_reset();
 }
 
+#define PER10_DEFAULT 0x181u
+#define PER10_2X      0x18Cu
+#define PER10_4X      0x18Au
+
 typedef struct uart_baudrate_config {
     unsigned long baudrate;
     unsigned int uart_ctrl;
+    uint16_t per10;
 } uart_baudrate_config_t;
 
 static const uart_baudrate_config_t supported_baudrates[] = {
-    {9600UL, UART_CTRL_REG_BAUDRATE_9600},
-    {19200UL, UART_CTRL_REG_BAUDRATE_19200},
-    {57600UL, UART_CTRL_REG_BAUDRATE_57600},
-    {115200UL, UART_CTRL_REG_BAUDRATE_115200},
-    {230400UL, UART_CTRL_REG_BAUDRATE_230400},
+    {9600UL,   UART_CTRL_REG_BAUDRATE_9600,   PER10_DEFAULT},
+    {19200UL,  UART_CTRL_REG_BAUDRATE_19200,  PER10_DEFAULT},
+    {57600UL,  UART_CTRL_REG_BAUDRATE_57600,  PER10_DEFAULT},
+    {115200UL, UART_CTRL_REG_BAUDRATE_115200, PER10_DEFAULT},
+    {230400UL, UART_CTRL_REG_BAUDRATE_230400, PER10_DEFAULT},
+    {460800UL, UART_CTRL_REG_BAUDRATE_230400, PER10_2X},
+    {921600UL, UART_CTRL_REG_BAUDRATE_230400, PER10_4X},
 };
 
 static const uart_baudrate_config_t *get_config_for_baudrate(const unsigned long baudrate) {
@@ -83,6 +103,7 @@ void uart_set_baudrate(const unsigned long baudrate) {
     uart_ctrl &= ~UART_CTRL_REG_BAUDRATE_MASK;
     uart_ctrl |= cfg->uart_ctrl;
     UART_CTRL_REG = uart_ctrl;
+    CLK_PER10_DIV_REG = cfg->per10;
     UART_CTRL_REG |= uart_enable;
 }
 
@@ -105,22 +126,16 @@ void uart_flush(void) {
 }
 
 unsigned int uart_rx_buffered_data(void) {
-    const unsigned int data_in_transit = DMAX_IDX_REG(DMA_UART_RX);
-    const unsigned int effective_rx_dma_ptr = uart_rx_dma_ptr + data_in_transit;
-    if (effective_rx_dma_ptr >= uart_rx_read_ptr) {
-        return effective_rx_dma_ptr - uart_rx_read_ptr;
-    }
-    return sizeof(uart_rx_buf) - uart_rx_read_ptr + effective_rx_dma_ptr;
+    return (unsigned int) (rx_head() - rx_read_total);
 }
 
 bool uart_data_available(void) {
-    const unsigned int data_in_transit = DMAX_IDX_REG(DMA_UART_RX);
-    return (uart_rx_dma_ptr + data_in_transit) != uart_rx_read_ptr;
+    return rx_head() != rx_read_total;
 }
 
 uint8_t uart_read_byte(void) {
-    const uint8_t datum = uart_rx_buf[uart_rx_read_ptr++];
-    uart_rx_read_ptr %= sizeof(uart_rx_buf);
+    const uint8_t datum = uart_rx_buf[rx_read_total % sizeof(uart_rx_buf)];
+    rx_read_total++;
     return datum;
 }
 
@@ -150,11 +165,11 @@ void uart_read(void *ptr, unsigned int len) {
 }
 
 void *uart_get_read_ptr(void) {
-    return &uart_rx_buf[uart_rx_read_ptr];
+    return &uart_rx_buf[rx_read_total % sizeof(uart_rx_buf)];
 }
 
 void uart_advance_read_ptr(const unsigned int increment) {
-    uart_rx_read_ptr += increment;
+    rx_read_total += increment;
 }
 
 void uart_rx_int(void) {
